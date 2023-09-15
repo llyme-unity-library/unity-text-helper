@@ -10,10 +10,25 @@
 		/// <summary>
 		/// 1.0 - [Value]
 		/// </summary>
-		PercentCompliment,
+		OneMinus,
 		/// <summary>
 		/// [Value] - 1.0
 		/// </summary>
-		PercentMinusOne
+		MinusOne,
+		/// <summary>
+		/// Shows the number sign when not zero.
+		/// Only shows decimals if it has one.
+		/// <br/>
+		/// +1, -1, 0, +1.1, -0.1
+		/// </summary>
+		Stat,
+		/// <summary>
+		/// Shows the number sign when not zero.
+		/// Only shows decimals if it has one.
+		/// <br/>
+		/// +1%, -1%, 0%, +1.1%, -0.1%
+		/// </summary>
+		StatPercent,
+		Negate
 	}
 }

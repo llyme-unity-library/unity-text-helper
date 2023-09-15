@@ -9,11 +9,11 @@ using UnityEngine;
 
 namespace TextHelper
 {
-	public static class Strings
+	public static partial class Strings
 	{
 		public readonly static Regex BRACKETS =
 			new(@"(?<!\\)\[((\\\[|\\\])*|[^\[\]]*)*(?<!\\)\]");
-				
+			
 		public static int StringIndexOf
 			(this IEnumerable<string> enumerable,
 			string value,
@@ -62,27 +62,6 @@ namespace TextHelper
 		}
 
 		/// <summary>
-		/// Splits the string, then trims it.
-		/// `RemoveEmptyEntries` also applies after trimmed.
-		/// </summary>
-		public static IEnumerable<string> SplitTrim
-			(this string text,
-			string separator,
-			StringSplitOptions options = StringSplitOptions.RemoveEmptyEntries)
-		{
-			if (string.IsNullOrWhiteSpace(text))
-				return Enumerable.Empty<string>();
-
-			IEnumerable<string> split =
-				text.Split(separator, options);
-
-			if (options == StringSplitOptions.RemoveEmptyEntries)
-				split = split.Where(v => !string.IsNullOrWhiteSpace(v));
-
-			return split.Select(v => v.Trim());
-		}
-
-		/// <summary>
 		/// Splits the string into 2, where the separator is.
 		/// Separator is excluded.
 		/// </summary>
@@ -95,7 +74,7 @@ namespace TextHelper
 
 			return new string[]
 			{
-				self.Substring(0, index),
+				self[..index],
 				self[(index + separator.Length)..]
 			};
 		}
@@ -113,68 +92,54 @@ namespace TextHelper
 		/// <summary>
 		/// Clears and trims any extra whitespaces.
 		/// <br></br>
-		/// Restricts only 1 whitespace character
-		/// between non-whitespace characters.
-		/// <br></br>
-		/// Restricts only 1 newline character
-		/// between non-newline characters.
+		/// Restricts only 1 non-newline whitespace character
+		/// between non-whitespace texts.
+		/// /// <br></br>
+		/// If there is only 1 newline character,
+		/// it is treated as a non-newline whitespace character,
+		/// otherwise,
+		/// the first newline character is ignored.
 		/// </summary>
 		public static string NormalizeWhiteSpace(this string text)
 		{
-			string[] texts = text.Trim().Split(
-				new string[] { "\r\n", "\n" },
-				StringSplitOptions.None
-			);
+			IEnumerable<string> texts =
+				text
+				.Split(StringSplitOptions.None, "\r\n", "\n")
+				.Trim();
 			StringBuilder sb = new();
-			// Adds a newline when `true`.
-			bool newline = true;
-			// Adds space after each newline when `true`.
-			bool newline_space = false;
+			// Newlines found so far.
+			int newlines = -1;
 
-			for (int i = 0; i < texts.Length; i++)
+			foreach (string text0 in texts)
 			{
-				if (string.IsNullOrWhiteSpace(texts[i]))
+				if (string.IsNullOrWhiteSpace(text0))
 				{
-					if (newline)
-					{
-						sb.AppendLine();
-						newline_space = false;
-						newline = false;
-					}
-
+					if (newlines >= 0)
+						// Ignore newlines if
+						// there are no word characters found yet.
+						newlines++;
+						
 					continue;
 				}
-
-				string text0 = texts[i].Trim();
-				// Registers spaces when `true`.
-				bool whitespace = true;
-
-				if (newline_space)
+				
+				if (newlines > 0)
+					for (; newlines > 0; newlines--)
+						sb.AppendLine();
+				else if (newlines != -1)
+					// No newlines.
 					sb.Append(" ");
-
-				foreach (char c in text0)
-				{
-					if (char.IsWhiteSpace(c))
-						if (whitespace)
-							whitespace = false;
-						else
-							continue;
-					else
-						whitespace = true;
-
-					sb.Append(c);
-				}
-
-				newline = true;
-				newline_space = true;
+						
+				sb.Append(text0);
+				
+				newlines = 0;
 			}
 
 			return sb.ToString();
 		}
 
 		public static string ExtendedFormat
-			(this string text,
-			string format)
+		(this string text,
+		string format)
 		{
 			switch (format.Enum(TextHelper.ExtendedFormat.Unknown))
 			{
@@ -184,16 +149,34 @@ namespace TextHelper
 
 					break;
 
-				case TextHelper.ExtendedFormat.PercentCompliment:
+				case TextHelper.ExtendedFormat.OneMinus:
 					if (float.TryParse(text, out float compliment))
 						text = (1f - compliment).ToString();
 
 					break;
 
-				case TextHelper.ExtendedFormat.PercentMinusOne:
+				case TextHelper.ExtendedFormat.MinusOne:
 					if (float.TryParse(text, out float percentMinusOne))
 						text = (percentMinusOne - 1f).ToString();
 
+					break;
+					
+				case TextHelper.ExtendedFormat.Stat:
+					if (float.TryParse(text, out float stat))
+						text = stat.ToString("+0.#;-0.#;0.#");
+						
+					break;
+					
+				case TextHelper.ExtendedFormat.StatPercent:
+					if (float.TryParse(text, out float statPercent))
+						text = statPercent.ToString("+0.#%;-0.#%;0.#%");
+						
+					break;
+				
+				case TextHelper.ExtendedFormat.Negate:
+					if (float.TryParse(text, out float negate))
+						text = (-negate).ToString();
+						
 					break;
 
 				case TextHelper.ExtendedFormat.Unknown:
@@ -279,19 +262,45 @@ namespace TextHelper
 
 		public static bool Bool(this string text, bool @default = false) =>
 			bool.TryParse(text, out bool result) ? result : @default;
-
-		public static Color Color(this string text)
+			
+		public static Color32 Color32(this string text)
 		{
 			if (string.IsNullOrEmpty(text))
-				return UnityEngine.Color.white;
+				return new();
+			
+			text = text.Trim();
+			
+			if (text.StartsWith("(") && text.EndsWith(")"))
+				text = text[1..^1];
+			else if (text.StartsWith("RGB(", StringComparison.OrdinalIgnoreCase) && text.EndsWith(")"))
+				text = text[4..^1];
+			else if (text.StartsWith("RGBA(", StringComparison.OrdinalIgnoreCase) && text.EndsWith(")"))
+				text = text[5..^1];
+
+			byte[] array =
+				text
+				.Split(',')
+				.Select(v => byte.TryParse(v, out byte value) ? value : (byte)0)
+				.TakeExactly(4);
+
+			return new(array[0], array[1], array[2], array[3]);
+		}
+
+		public static bool Color(this string text, out Color color)
+		{
+			if (string.IsNullOrEmpty(text))
+			{
+				color = default;
+				return false;
+			}
 
 			text = text.Trim();
 
 
 			// Hexadecimal and Words
 
-			if (ColorUtility.TryParseHtmlString(text, out Color color))
-				return color;
+			if (ColorUtility.TryParseHtmlString(text, out color))
+				return true;
 
 
 			// RGB(A)
@@ -303,13 +312,35 @@ namespace TextHelper
 			else if (text.StartsWith("RGBA(", StringComparison.OrdinalIgnoreCase) && text.EndsWith(")"))
 				text = text[5..^1];
 
-			float[] array = text
+			float[] array =
+				text
 				.Split(',')
 				.Select(v => float.TryParse(v, out float value) ? value : 1f)
-				.TakeExactly(4);
+				.TakeAtMost(4);
+			
+			if (array.Length < 3)
+				return false;
 
-			return new Color(array[0], array[1], array[2], array[3]);
+			switch (array.Length)
+			{
+				case 3:
+					color = new Color(array[0], array[1], array[2]);
+					return true;
+					
+				case 4:
+					color = new Color(array[0], array[1], array[2], array[3]);
+					return true;
+			}
+			
+			return false;
 		}
+
+		public static Color Color
+		(this string text,
+		Color @default = default) =>
+			Color(text, out Color color)
+			? color
+			: @default;
 
 		public static Vector2Int Vector2Int(this string text)
 		{
@@ -325,6 +356,22 @@ namespace TextHelper
 				.TakeExactly(2);
 
 			return new Vector2Int(array[0], array[1]);
+		}
+
+		public static Vector3Int Vector3Int(this string text)
+		{
+			if (string.IsNullOrEmpty(text))
+				return UnityEngine.Vector3Int.zero;
+
+			if (text.StartsWith("(") && text.EndsWith(")"))
+				text = text[1..^1];
+
+			int[] array = text
+				.Split(',')
+				.Select(v => int.TryParse(v, out int value) ? value : 0)
+				.TakeExactly(3);
+
+			return new Vector3Int(array[0], array[1], array[2]);
 		}
 
 		public static Vector2 Vector2(this string text, Vector2 @default = default)
@@ -381,11 +428,13 @@ namespace TextHelper
 		{
 			Regex regex = new(@"\([^\(\)]+\)");
 			List<Vector3> result = new();
-
-			foreach (Match match in regex.Matches(text))
-				if (match.Success)
-					result.Add(Vector3(match.Value));
-
+			
+			result.AddRange(
+				from Match match in regex.Matches(text)
+				where match.Success
+				select Vector3(match.Value)
+			);
+			
 			return result.ToArray();
 		}
 
@@ -422,16 +471,23 @@ namespace TextHelper
 		}
 
 		public static float Float
-			(this string text,
-			float @default = 0f) =>
+		(this string text,
+		float @default = 0f) =>
 			float.TryParse(text, out float value)
 			? value
 			: @default;
 
 		public static int Int
-			(this string text,
-			int @default = 0) =>
+		(this string text,
+		int @default = 0) =>
 			int.TryParse(text, out int value)
+			? value
+			: @default;
+			
+		public static uint UInt
+		(this string text,
+		uint @default = 0) =>
+			uint.TryParse(text, out uint value)
 			? value
 			: @default;
 
@@ -445,33 +501,53 @@ namespace TextHelper
 		/// Used as an alternative for lambda functions.
 		/// </summary>
 		public static string Trim(string text) => text?.Trim();
+		
+		/// <summary>
+		/// Used as an alternative for lambda functions.
+		/// </summary>
+		public static string ToUpper(string text) => text?.ToUpper();
+
+		public static IEnumerable<string> Trim
+		(this IEnumerable<string> texts) =>
+			texts != null
+			? texts.Select(Trim)
+			: Enumerable.Empty<string>();
+		
+		/// <summary>
+		/// This will directly modify the array.
+		/// </summary>
+		public static string[] Trim
+		(this string[] texts)
+		{
+			for (int i = 0; i < texts.Length; i++)
+				texts[i] = Trim(texts[i]);
+			
+			return texts;
+		}
+
+		public static IEnumerable<string> ToUpper
+		(this IEnumerable<string> texts) =>
+			texts != null
+			? texts.Select(ToUpper)
+			: Enumerable.Empty<string>();
 
 		/// <summary>
-		/// Automatically trims.
+		/// Removes empty entries.
 		/// </summary>
-		public static IEnumerable<string> Split
-			(string text,
-			bool uppercase = true,
-			params string[] separators)
-		{
-			if (text == null)
-				return new string[0];
+		public static string[] Split
+		(this string text,
+		params string[] separators) =>
+			text != null
+			? text.Split(separators, StringSplitOptions.RemoveEmptyEntries)
+			: new string[0];
 
-			string[] texts = text.Split(
-				separators,
-				StringSplitOptions.RemoveEmptyEntries
-			);
-
-			return texts.Select(v =>
-			{
-				v = v.Trim();
-
-				if (uppercase)
-					v = v.ToUpper();
-
-				return v;
-			});
-		}
+		public static string[] Split
+		(this string text,
+		StringSplitOptions option,
+		params string[] separators) =>
+			text != null
+			? text.Split(separators, option)
+			: new string[0];
 
 		public static string LetterCase
 			(this string text,
@@ -484,6 +560,16 @@ namespace TextHelper
 				TextHelper.LetterCase.Uppercase => text.ToUpper(),
 				_ => text,
 			};
+		
+		/// <summary>
+		/// Only shows decimals when below 1.
+		/// <br/>
+		/// Empty when 0.
+		/// </summary>
+		public static string Cooldown(this float number) =>
+			number > 1f
+			? number.ToString("#")
+			: number.ToString("0.#");
 
 		/// <summary>
 		/// Prints a number as a comma-separated by thousands.
